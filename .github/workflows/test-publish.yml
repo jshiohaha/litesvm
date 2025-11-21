@@ -123,25 +123,51 @@ jobs:
       - name: Compile TypeScript
         run: cd crates/node-litesvm/ && yarn build:js
 
-      # Update package name for scoped package
+      - name: Copy internal.js and .node files to dist
+        run: |
+          cd crates/node-litesvm/
+          echo "Copying internal.js (NAPI-generated, should not be transpiled)..."
+          cp litesvm/internal.js dist/internal.js
+          cp litesvm/internal.js.map dist/internal.js.map 2>/dev/null || true
+          echo "✅ Copied internal.js to dist/"
+
+          echo "Copying .node files to dist..."
+          cp litesvm/*.node dist/
+          echo "✅ Copied .node files to dist/"
+
+          echo "Final dist/ contents:"
+          ls -lh dist/*.node | head -10
+
+      # Update package for publishing
       - name: Update package name
         if: ${{ inputs.npm_package_name != 'litesvm' }}
         run: |
           cd crates/node-litesvm/
           npm pkg set name="${{ inputs.npm_package_name }}"
 
+      - name: Update files array to only publish dist
+        run: |
+          cd crates/node-litesvm/
+          echo "Setting files array to only include dist/ (everything is there now)..."
+          npm pkg set files='["dist/"]'
+          echo "✅ Package will only publish dist/ directory"
+
       - name: List package contents
         run: |
           cd crates/node-litesvm/
-          echo "📦 Package contents:"
-          echo "Main package:"
-          ls -lh package.json
+          echo "📦 Package contents that will be published:"
           echo ""
-          echo "Compiled JS/TS:"
-          ls -lh dist/
+          echo "dist/ directory:"
+          ls -lh dist/ | head -20
           echo ""
-          echo "Native bindings:"
-          ls -lh litesvm/*.node
+          echo "litesvm/ directory:"
+          ls -lh litesvm/*.node 2>/dev/null || echo "No .node files in litesvm/"
+          echo ""
+          echo "Checking if TypeScript compiled internal.js to dist/:"
+          test -f dist/internal.js && echo "✅ dist/internal.js exists" || echo "❌ dist/internal.js missing"
+          echo ""
+          echo "Package.json settings:"
+          cat package.json | grep -A5 '"main"\|"files"'
 
       - name: Dry run check
         if: ${{ inputs.dry_run }}
