@@ -121,27 +121,36 @@ jobs:
       - name: Compile TypeScript
         run: cd crates/node-litesvm/ && yarn build:js
 
-      # Update package name for scoped package (after napi operations, before prepublish)
+      # Update package name for scoped package
       - name: Update package name
         if: ${{ inputs.npm_package_name != 'litesvm' }}
         run: |
           cd crates/node-litesvm/
           npm pkg set name="${{ inputs.npm_package_name }}"
 
-      # Run napi prepublish manually with the updated name (use node directly to bypass yarn)
-      - name: Prepare npm packages
-        run: cd crates/node-litesvm/ && node ./node_modules/@napi-rs/cli/dist/cli.js prepublish -t npm
-
-      - name: List packages
-        run: cd crates/node-litesvm/ && ls -R ./npm
+      - name: List package contents
+        run: |
+          cd crates/node-litesvm/
+          echo "📦 Package contents:"
+          echo "Main package:"
+          ls -lh package.json
+          echo ""
+          echo "Compiled JS/TS:"
+          ls -lh dist/
+          echo ""
+          echo "Native bindings:"
+          ls -lh litesvm/*.node
 
       - name: Dry run check
         if: ${{ inputs.dry_run }}
         run: |
           echo "🔍 DRY RUN MODE - Package will NOT be published"
-          echo "Package contents:"
+          echo ""
+          echo "Package contents that would be published:"
           cd crates/node-litesvm/
           npm pack --dry-run
+          echo ""
+          echo "To publish for real, uncheck 'dry_run' and run again"
 
       - name: Publish to npm
         if: ${{ !inputs.dry_run }}
