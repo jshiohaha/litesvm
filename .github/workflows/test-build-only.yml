@@ -1,0 +1,153 @@
+name: Test Build Only (Fork)
+
+# Quick workflow to test builds without publishing
+# Useful for verifying changes before a full publish test
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target platform to build (or "all" for all platforms)'
+        required: true
+        default: 'x86_64-unknown-linux-gnu'
+        type: choice
+        options:
+          - all
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+          - x86_64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-gnu
+          - aarch64-unknown-linux-musl
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: x86_64-apple-darwin
+            build: yarn build --target x86_64-apple-darwin
+          - host: macos-latest
+            target: aarch64-apple-darwin
+            build: yarn build --target aarch64-apple-darwin
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            build: yarn build --target x86_64-unknown-linux-gnu --use-napi-cross
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            build: yarn build --target x86_64-unknown-linux-musl -x
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            build: yarn build --target aarch64-unknown-linux-gnu --use-napi-cross
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            build: yarn build --target aarch64-unknown-linux-musl -x
+    name: Build ${{ matrix.settings.target }}
+    runs-on: ${{ matrix.settings.host }}
+    defaults:
+      run:
+        working-directory: crates/node-litesvm
+    steps:
+      - name: Check if target should be built
+        id: should_build
+        run: |
+          if [[ "${{ inputs.target }}" == "all" || "${{ inputs.target }}" == "${{ matrix.settings.target }}" ]]; then
+            echo "build=true" >> $GITHUB_OUTPUT
+            echo "✅ Building ${{ matrix.settings.target }}"
+          else
+            echo "build=false" >> $GITHUB_OUTPUT
+            echo "⏭️  Skipping ${{ matrix.settings.target }}"
+          fi
+        shell: bash
+
+      - uses: actions/checkout@v5
+        if: steps.should_build.outputs.build == 'true'
+
+      - name: Setup node
+        if: steps.should_build.outputs.build == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: crates/node-litesvm/yarn.lock
+
+      - name: Install Rust
+        if: steps.should_build.outputs.build == 'true'
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: stable
+          targets: ${{ matrix.settings.target }}
+
+      - name: Cache cargo
+        if: steps.should_build.outputs.build == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.napi-rs
+            .cargo-cache
+            target/
+          key: ${{ matrix.settings.target }}-cargo-${{ matrix.settings.host }}
+
+      - uses: mlugg/setup-zig@v2
+        if: steps.should_build.outputs.build == 'true' && contains(matrix.settings.target, 'musl')
+        with:
+          version: 0.14.1
+
+      - name: Install cargo-zigbuild
+        uses: taiki-e/install-action@v2
+        if: steps.should_build.outputs.build == 'true' && contains(matrix.settings.target, 'musl')
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          tool: cargo-zigbuild
+
+      - name: Install dependencies
+        if: steps.should_build.outputs.build == 'true'
+        run: yarn install
+
+      - name: Build
+        if: steps.should_build.outputs.build == 'true'
+        run: ${{ matrix.settings.build }}
+        shell: bash
+
+      - name: List built artifacts
+        if: steps.should_build.outputs.build == 'true'
+        run: ls -lh litesvm/*.node
+        shell: bash
+
+      - name: Upload artifact
+        if: steps.should_build.outputs.build == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: crates/node-litesvm/litesvm/litesvm.*.node
+          if-no-files-found: error
+
+  verify:
+    name: Verify Build Artifacts
+    runs-on: ubuntu-latest
+    needs: build
+    if: always()
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+        continue-on-error: true
+
+      - name: List all artifacts
+        run: |
+          echo "📦 Built artifacts for target: ${{ inputs.target }}"
+          echo ""
+          if [ -d "artifacts" ] && [ "$(find artifacts -name "*.node" 2>/dev/null | wc -l)" -gt 0 ]; then
+            find artifacts -name "*.node" -exec ls -lh {} \;
+            echo ""
+            echo "✅ Build completed successfully!"
+          else
+            echo "⚠️  No artifacts found (this is expected if no targets matched)"
+          fi
