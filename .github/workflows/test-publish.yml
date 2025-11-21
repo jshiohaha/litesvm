@@ -121,12 +121,16 @@ jobs:
       - name: Compile TypeScript
         run: cd crates/node-litesvm/ && yarn build:js
 
-      # Update package name if using scoped package (after all napi operations)
+      # Update package name for scoped package (after napi operations, before prepublish)
       - name: Update package name
         if: ${{ inputs.npm_package_name != 'litesvm' }}
         run: |
           cd crates/node-litesvm/
           npm pkg set name="${{ inputs.npm_package_name }}"
+
+      # Run napi prepublish manually with the updated name
+      - name: Prepare npm packages
+        run: cd crates/node-litesvm/ && yarn napi prepublish -t npm
 
       - name: List packages
         run: cd crates/node-litesvm/ && ls -R ./npm
@@ -144,7 +148,7 @@ jobs:
         run: |
           cd crates/node-litesvm/
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
-          npm publish --access public
+          npm publish --access public --ignore-scripts
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
