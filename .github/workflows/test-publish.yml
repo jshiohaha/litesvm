@@ -107,13 +107,6 @@ jobs:
       - name: Install dependencies
         run: cd crates/node-litesvm/ && corepack enable && yarn install
 
-      # Update package name if using scoped package
-      - name: Update package name
-        if: ${{ inputs.npm_package_name != 'litesvm' }}
-        run: |
-          cd crates/node-litesvm/
-          npm pkg set name="${{ inputs.npm_package_name }}"
-
       - name: Create npm dirs
         run: cd crates/node-litesvm/ && yarn napi create-npm-dirs
 
@@ -127,6 +120,13 @@ jobs:
 
       - name: Compile TypeScript
         run: cd crates/node-litesvm/ && yarn build:js
+
+      # Update package name if using scoped package (after all napi operations)
+      - name: Update package name
+        if: ${{ inputs.npm_package_name != 'litesvm' }}
+        run: |
+          cd crates/node-litesvm/
+          npm pkg set name="${{ inputs.npm_package_name }}"
 
       - name: List packages
         run: cd crates/node-litesvm/ && ls -R ./npm
