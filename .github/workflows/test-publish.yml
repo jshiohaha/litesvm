@@ -128,9 +128,9 @@ jobs:
           cd crates/node-litesvm/
           npm pkg set name="${{ inputs.npm_package_name }}"
 
-      # Run napi prepublish manually with the updated name
+      # Run napi prepublish manually with the updated name (use node directly to bypass yarn)
       - name: Prepare npm packages
-        run: cd crates/node-litesvm/ && yarn napi prepublish -t npm
+        run: cd crates/node-litesvm/ && node ./node_modules/@napi-rs/cli/dist/cli.js prepublish -t npm
 
       - name: List packages
         run: cd crates/node-litesvm/ && ls -R ./npm
