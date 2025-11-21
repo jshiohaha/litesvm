@@ -28,9 +28,6 @@ jobs:
             target: aarch64-apple-darwin
             build: yarn build --target aarch64-apple-darwin
           - host: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            build: yarn build --target x86_64-unknown-linux-gnu --use-napi-cross
-          - host: ubuntu-latest
             target: x86_64-unknown-linux-musl
             build: yarn build --target x86_64-unknown-linux-musl -x
           - host: ubuntu-latest
@@ -137,6 +134,36 @@ jobs:
 
           echo "Final dist/ contents:"
           ls -lh dist/*.node | head -10
+
+      - name: Patch internal.js to use musl for all x86_64 Linux
+        run: |
+          cd crates/node-litesvm/dist/
+          echo "Patching internal.js to use musl for x86_64 Linux regardless of glibc/musl detection..."
+
+          # Replace the isMusl() check for x64 to always use musl
+          # Find the section: if (process.arch === 'x64') { if (isMusl()) { ... } else { ... } }
+          # Replace it to always use musl path
+
+          node -e "
+          const fs = require('fs');
+          let content = fs.readFileSync('internal.js', 'utf8');
+
+          // Find and replace the x64 Linux section to always use musl
+          // Pattern: if (process.arch === 'x64') followed by isMusl() check
+          const pattern = /(if \(process\.arch === 'x64'\) \{)\s*(if \(isMusl\(\)\) \{[\s\S]*?\} else \{[\s\S]*?\})/;
+
+          content = content.replace(pattern, (match, archCheck, muslCheck) => {
+            // Extract just the musl loading code (first half of the if/else)
+            const muslCode = muslCheck.match(/if \(isMusl\(\)\) \{([\s\S]*?)\} else \{/)[1];
+            return archCheck + muslCode;
+          });
+
+          fs.writeFileSync('internal.js', content);
+          console.log('✅ Patched internal.js to always use musl for x86_64 Linux');
+          "
+
+          echo "Verifying patch..."
+          grep -A10 "process.arch === 'x64'" internal.js | head -20
 
       # Update package for publishing
       - name: Update package name
